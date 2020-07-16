@@ -4,7 +4,7 @@
         {
             "label": "Build Main",
             "type": "shell",
-            "command": "g++ -g main.cpp -o main.out",
+            "command": "make all",
             "group": {
                 "kind": "build",
                 "isDefault": true

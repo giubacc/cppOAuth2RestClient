@@ -33,7 +33,14 @@ RUN apt-get update \
     # Clean up
     && apt-get autoremove -y \
     && apt-get clean -y \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    #
+    && mkdir /3rdpartylibs && cd /3rdpartylibs \
+    && git clone https://github.com/mrtazz/restclient-cpp.git && cd restclient-cpp \
+    && git checkout 0.5.2 \
+    && ./autogen.sh \
+    && ./configure \
+    && make install
 
 # Switch back to dialog for any ad-hoc use of apt-get
 ENV DEBIAN_FRONTEND=dialog
