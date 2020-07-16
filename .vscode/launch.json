@@ -5,7 +5,7 @@
             "name": "Launch Main",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/main.out",
+            "program": "${workspaceFolder}/restclient",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

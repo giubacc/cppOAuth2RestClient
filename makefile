@@ -1,13 +1,14 @@
 SRC = 	./main.cpp\
-		./properties_file_reader.cpp
+		./vendor/properties_file_reader.cpp\
+		./vendor/json/jsoncpp.cpp
 		
 OBJ = $(SRC:.cpp=.o)
 OUTDIR = .
-INCLUDES = 	-I.
+INCLUDES = 	-I. -I./vendor
 			
 CCFLAGS = -Wall -g
 CCC = g++
-LDLIBS= -lrestclient-cpp
+LDLIBS= -l:librestclient-cpp.a -lcurl
 
 .cpp.o:
 	$(CCC) $(INCLUDES) $(CCFLAGS) -c $< -o $@
