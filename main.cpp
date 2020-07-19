@@ -35,243 +35,248 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #define GET_PROPERTY(from, p) from(p)[0]
 
 /** rest_client
- *  
- *  rest_client provides basic client functionalities to call REST API(s) 
+ *
+ *  rest_client provides basic client functionalities to call REST API(s)
  *  based on HTTP protocol using OAuth2 like authentication.
- *  Please note that OAuth2 support in this example is severely limited and do not cover 
+ *  Please note that OAuth2 support in this example is severely limited and do not cover
  *  the full specification of the protocol.
  *  rest_client is intended to be a didactical example and should not be used as production code.
- *  For reasons of brevity and clarity only get() - performing HTTP GET - method 
+ *  For reasons of brevity and clarity only get() - performing HTTP GET - method
  *  has been implemented in rest_client.
- *  However, you can easily add missing HTTP methods along the lines of get() method. 
- *  rest_client has been developed for the usage with Google API. 
+ *  However, you can easily add missing HTTP methods along the lines of get() method.
+ *  rest_client has been developed for the usage with Google API.
  *  You can start hacking with Google API at: https://console.developers.google.com/.
  */
 struct rest_client {
 
-    //ctor
-    rest_client(std::string &&properties_file_name)
-        : cfg_(std::move(properties_file_name)) {
+        //ctor
+        rest_client(std::string &&properties_file_name)
+            : cfg_(std::move(properties_file_name)) {
             std::ifstream refresh_token_ifs("refresh_token");
-            if(!refresh_token_ifs.bad()){
+            if(!refresh_token_ifs.bad()) {
                 refresh_token_ifs >> refresh_token_;
             }
         }
 
-    const utils::PropertiesFileReader &get_cfg(){
-        return cfg_;
-    }
-
-    int init(){
-
-        //we create authentication related connection object
-        
-        auth_conn_.reset(new RestClient::Connection(GET_PROPERTY(cfg_, "token_server")));
-        if(auth_conn_){
-            std::cout << "auth_conn_ object created" << std::endl;
-        }else{
-            std::cerr << "failed creating auth_conn_ object" << std::endl;
-            return -1;
+        const utils::PropertiesFileReader &get_cfg() {
+            return cfg_;
         }
 
-        //we setup authentication related connection object
-        auth_conn_->SetTimeout(30);
-        RestClient::HeaderFields authHeaderFields;
-        authHeaderFields["Content-Type"] = std::string("application/x-www-form-urlencoded");
-        auth_conn_->SetHeaders(authHeaderFields);
+        int init() {
 
+            //we create authentication related connection object
 
-        //we create resource related connection object
-        resource_conn_.reset(new RestClient::Connection(GET_PROPERTY(cfg_, "rest_api_url")));
-        if(resource_conn_){
-            std::cout << "resource_conn_ object created" << std::endl;
-        }else{
-            std::cerr << "failed creating resource_conn_ object" << std::endl;
-            return -1;
-        }
-
-        //we setup resource related connection object
-        resource_conn_->SetTimeout(30);
-
-        //all ok
-        return 0;
-    }
-
-    /** get
-     *
-     * 
-     */
-    template<typename callback>
-    int get(const std::string &query_string, callback cb) {
-        if(refresh_auth_token_if_expired()){
-            std::cerr << "failed to get authentication token, aborting GET call..." << std::endl;
-            return -1;
-        }
-
-        std::string uri("/");
-        uri += GET_PROPERTY(cfg_, "rest_api_uri");
-        if(query_string != ""){
-            uri += '?'; 
-            uri += query_string;
-        }
-
-        RestClient::HeaderFields reqHF;
-        reqHF["Authorization"] = auth_token_type_ + ' ' +  auth_token_;
-        resource_conn_->SetHeaders(reqHF);
-
-        RestClient::Response res;
-        res = resource_conn_->get(uri);
-
-        if(res.code != 200){
-            std::cout << "warning: call result code was:" << res.code << std::endl;  
-        }
-
-        return cb(res);
-    }
-
-private:
-
-    int refresh_auth_token_if_expired(){
-        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-        int res = 0;
-
-        //if the authentication token has been expired or if it will expire in less than 30 seconds we request a brand new. 
-        if((now > auth_token_expire_tp_) || ((auth_token_expire_tp_ - now) < std::chrono::duration<int>(30))) {
-            if(refresh_token_ == ""){
-                //we must request the refresh_token; this can be done only once for a given code.
-                std::cout << "sending confirm permissions request for the given code:" << GET_PROPERTY(cfg_, "code") << std::endl;
-                res = post_confirm_permissions();
-            }else{
-                //we already have got a refresh_token, we must use that in order to refresh the authentication token.
-                std::cout << "sending refresh token request" << std::endl;
-                res = post_refresh_token();
+            auth_conn_.reset(new RestClient::Connection(GET_PROPERTY(cfg_, "token_server")));
+            if(auth_conn_) {
+                std::cout << "auth_conn_ object created" << std::endl;
+            } else {
+                std::cerr << "failed creating auth_conn_ object" << std::endl;
+                return -1;
             }
-        }else{
-            std::cout << "current authentication token is valid" << std::endl;
-        }
 
-        return res;
-    }
+            //we setup authentication related connection object
+            auth_conn_->SetTimeout(30);
+            RestClient::HeaderFields authHeaderFields;
+            authHeaderFields["Content-Type"] = std::string("application/x-www-form-urlencoded");
+            auth_conn_->SetHeaders(authHeaderFields);
 
-    int post_confirm_permissions(){
-        std::string post_data = build_confirm_permissions_request();
-        RestClient::Response rest_res = auth_conn_->post("", post_data);
-        if(rest_res.code == 200) {
-            return process_confirm_permissions_response(rest_res);
-        }else{
-            std::cerr << "error getting refresh token and authentication token, http-code:" << rest_res.code << std::endl;
-            std::cerr << "http-body:" << rest_res.body << std::endl;
-            return -1;
-        }
-    }
 
-    int post_refresh_token(){
-        std::string post_data = build_refresh_token_request();
-        RestClient::Response rest_res = auth_conn_->post("", post_data);
-        if(rest_res.code == 200) {
-            return process_refresh_token_response(rest_res);
-        }else{
-            std::cerr << "error refreshing token, http-code:" << rest_res.code << std::endl;
-            std::cerr << "http-body:" << rest_res.body << std::endl;
-            return -1;
-        }
-    }
-
-    std::string build_confirm_permissions_request(){
-        std::ostringstream os;
-        os << "code="           << GET_PROPERTY(cfg_, "code")             << '&'
-           << "client_id="      << GET_PROPERTY(cfg_, "client_id")        << '&'
-           << "client_secret="  << GET_PROPERTY(cfg_, "client_secret")    << '&'
-           << "redirect_uri=http://localhost&"
-           << "grant_type=authorization_code";
-        return os.str();
-    }
-
-    std::string build_refresh_token_request(){
-        std::ostringstream os;
-        os << "client_id="      << GET_PROPERTY(cfg_, "client_id")        << '&'
-           << "client_secret="  << GET_PROPERTY(cfg_, "client_secret")    << '&'
-           << "refresh_token="  << refresh_token_ << '&'
-           << "grant_type=refresh_token";
-        return os.str();
-    }
-
-    int process_confirm_permissions_response(const RestClient::Response &response){
-        /*
-            example of response:
-
-            {
-                "access_token": "...",
-                "expires_in": 3599,
-                "refresh_token": "...",
-                "scope": "https://www.googleapis.com/auth/drive.readonly",
-                "token_type": "Bearer"
+            //we create resource related connection object
+            resource_conn_.reset(new RestClient::Connection(GET_PROPERTY(cfg_, "rest_api_url")));
+            if(resource_conn_) {
+                std::cout << "resource_conn_ object created" << std::endl;
+            } else {
+                std::cerr << "failed creating resource_conn_ object" << std::endl;
+                return -1;
             }
-        */
 
-        Json::Value auth_res;
-        std::istringstream istr(response.body);
-        istr >> auth_res;
-        refresh_token_ = auth_res.get("refresh_token", "").asString();
-        auth_token_ = auth_res.get("access_token", "").asString();
-        auth_token_type_ = auth_res.get("token_type", "").asString();
-        auth_token_expire_tp_ = std::chrono::system_clock::now() + std::chrono::duration<int>(auth_res.get("expires_in", 0U).asUInt());
-        
-        //flush refresh token to "refresh_token" file so it can be reused in future runs
-        std::ofstream refresh_token_ofs("refresh_token", std::ofstream::trunc);
-        refresh_token_ofs << refresh_token_;
+            //we setup resource related connection object
+            resource_conn_->SetTimeout(30);
 
-        std::cout << "confirm permissions response:" << std::endl << auth_res;
-        
-        return 0;
-    }
+            //all ok
+            return 0;
+        }
 
-    int process_refresh_token_response(const RestClient::Response &response){
-        /*
-            example of response:
-
-            {
-                "access_token": "...",
-                "expires_in": 3599,
-                "scope": "https://www.googleapis.com/auth/drive.readonly",
-                "token_type": "Bearer"
+        /** get
+         *
+         *  Performs an HTTP GET call over resource connection using an optional parameter: query_string.
+         *  You can pass to the second parameter: cb, an argument denoting a lambda that takes the response
+         *  of the HTTP GET call.
+         */
+        template<typename callback>
+        int get(const std::string &query_string, callback cb) {
+            if(refresh_auth_token_if_expired()) {
+                std::cerr << "failed to get authentication token, aborting GET call..." << std::endl;
+                return -1;
             }
-        */
 
-        Json::Value auth_res;
-        std::istringstream istr(response.body);
-        istr >> auth_res;
-        auth_token_ = auth_res.get("access_token", "").asString();
-        auth_token_type_ = auth_res.get("token_type", "").asString();
-        auth_token_expire_tp_ = std::chrono::system_clock::now() + std::chrono::duration<int>(auth_res.get("expires_in", 0U).asUInt());
+            std::string uri("/");
+            uri += GET_PROPERTY(cfg_, "rest_api_uri");
+            if(query_string != "") {
+                uri += '?';
+                uri += query_string;
+            }
 
-        std::cout << "refresh token response:" << std::endl << auth_res << std::endl;
-        std::time_t tt = std::chrono::system_clock::to_time_t(auth_token_expire_tp_);
-        std::cout << "authentication token will expire at:" << ctime(&tt);
+            RestClient::HeaderFields reqHF;
+            reqHF["Authorization"] = auth_token_type_ + ' ' +  auth_token_;
+            resource_conn_->SetHeaders(reqHF);
 
-        return 0;
-    }
+            RestClient::Response res;
+            res = resource_conn_->get(uri);
 
-    utils::PropertiesFileReader cfg_;
-    std::unique_ptr<RestClient::Connection> auth_conn_;
-    std::unique_ptr<RestClient::Connection> resource_conn_;
-    std::string refresh_token_;                                     //refresh token
-    std::string auth_token_;                                        //authentication token
-    std::string auth_token_type_;                                   //authentication token type (Bearer)
-    std::chrono::system_clock::time_point auth_token_expire_tp_;    //auth-token expire time-point
+            if(res.code != 200) {
+                std::cout << "warning: call result code was:" << res.code << std::endl;
+            }
+
+            return cb(res);
+        }
+
+    private:
+
+        int refresh_auth_token_if_expired() {
+            std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+            int res = 0;
+
+            //if the authentication token has been expired or if it will expire in less than 30 seconds we request a brand new.
+            if((now > auth_token_expire_tp_) || ((auth_token_expire_tp_ - now) < std::chrono::duration<int>(30))) {
+                if(refresh_token_ == "") {
+                    //we must request the refresh_token; this can be done only once for a given code.
+                    std::cout << "sending confirm permissions request for the given code:" << GET_PROPERTY(cfg_, "code") << std::endl;
+                    res = post_confirm_permissions();
+                } else {
+                    //we already have got a refresh_token, we must use that in order to refresh the authentication token.
+                    std::cout << "sending refresh token request" << std::endl;
+                    res = post_refresh_token();
+                }
+            } else {
+                std::cout << "current authentication token is valid" << std::endl;
+            }
+
+            return res;
+        }
+
+        int post_confirm_permissions() {
+            std::string post_data = build_confirm_permissions_request();
+            RestClient::Response rest_res = auth_conn_->post("", post_data);
+            if(rest_res.code == 200) {
+                return process_confirm_permissions_response(rest_res);
+            } else {
+                std::cerr << "error getting refresh token and authentication token, http-code:" << rest_res.code << std::endl;
+                std::cerr << "http-body:" << rest_res.body << std::endl;
+                return -1;
+            }
+        }
+
+        int post_refresh_token() {
+            std::string post_data = build_refresh_token_request();
+            RestClient::Response rest_res = auth_conn_->post("", post_data);
+            if(rest_res.code == 200) {
+                return process_refresh_token_response(rest_res);
+            } else {
+                std::cerr << "error refreshing token, http-code:" << rest_res.code << std::endl;
+                std::cerr << "http-body:" << rest_res.body << std::endl;
+                return -1;
+            }
+        }
+
+        std::string build_confirm_permissions_request() {
+            std::ostringstream os;
+            os << "code="           << GET_PROPERTY(cfg_, "code")             << '&'
+               << "client_id="      << GET_PROPERTY(cfg_, "client_id")        << '&'
+               << "client_secret="  << GET_PROPERTY(cfg_, "client_secret")    << '&'
+               << "redirect_uri=http://localhost&"
+               << "grant_type=authorization_code";
+            return os.str();
+        }
+
+        std::string build_refresh_token_request() {
+            std::ostringstream os;
+            os << "client_id="      << GET_PROPERTY(cfg_, "client_id")        << '&'
+               << "client_secret="  << GET_PROPERTY(cfg_, "client_secret")    << '&'
+               << "refresh_token="  << refresh_token_ << '&'
+               << "grant_type=refresh_token";
+            return os.str();
+        }
+
+        int process_confirm_permissions_response(const RestClient::Response &response) {
+            /*
+                example of response:
+
+                {
+                    "access_token": "...",
+                    "expires_in": 3599,
+                    "refresh_token": "...",
+                    "scope": "https://www.googleapis.com/auth/drive.readonly",
+                    "token_type": "Bearer"
+                }
+            */
+
+            Json::Value auth_res;
+            std::istringstream istr(response.body);
+            istr >> auth_res;
+            refresh_token_ = auth_res.get("refresh_token", "").asString();
+            auth_token_ = auth_res.get("access_token", "").asString();
+            auth_token_type_ = auth_res.get("token_type", "").asString();
+            auth_token_expire_tp_ = std::chrono::system_clock::now() +
+                                    std::chrono::duration<int>(auth_res.get("expires_in", 0U).asUInt());
+
+            //flush refresh token to "refresh_token" file so it can be reused in future runs
+            std::ofstream refresh_token_ofs("refresh_token", std::ofstream::trunc);
+            refresh_token_ofs << refresh_token_;
+
+            std::cout << "confirm permissions response:" << std::endl << auth_res;
+
+            return 0;
+        }
+
+        int process_refresh_token_response(const RestClient::Response &response) {
+            /*
+                example of response:
+
+                {
+                    "access_token": "...",
+                    "expires_in": 3599,
+                    "scope": "https://www.googleapis.com/auth/drive.readonly",
+                    "token_type": "Bearer"
+                }
+            */
+
+            Json::Value auth_res;
+            std::istringstream istr(response.body);
+            istr >> auth_res;
+            auth_token_ = auth_res.get("access_token", "").asString();
+            auth_token_type_ = auth_res.get("token_type", "").asString();
+            auth_token_expire_tp_ = std::chrono::system_clock::now() +
+                                    std::chrono::duration<int>(auth_res.get("expires_in", 0U).asUInt());
+
+            std::cout << "refresh token response:" << std::endl << auth_res << std::endl;
+            std::time_t tt = std::chrono::system_clock::to_time_t(auth_token_expire_tp_);
+            std::cout << "authentication token will expire at:" << ctime(&tt);
+
+            return 0;
+        }
+
+        utils::PropertiesFileReader cfg_;
+        std::unique_ptr<RestClient::Connection> auth_conn_;
+        std::unique_ptr<RestClient::Connection> resource_conn_;
+        std::string refresh_token_;                                     //refresh token
+        std::string auth_token_;                                        //authentication token
+        std::string auth_token_type_;                                   //authentication token type (Bearer)
+        std::chrono::system_clock::time_point auth_token_expire_tp_;    //auth-token expire time-point
 };
 
-int main() {
+int main()
+{
 
     //we create a rest client
     rest_client rc("rc.properties");
     int res = 0;
 
     //we init it
-    if((res = rc.init())){
+    if((res = rc.init())) {
         std::cerr << "error init rest_client, exiting..." << std::endl;
         return res;
-    }    
+    }
 
     //the optional query string to apply to the REST API call
     std::string query_string("key=");
@@ -280,17 +285,17 @@ int main() {
     //the response in json format from the REST API
     Json::Value get_res;
 
-    //the HTTP GET call for the REST API 
-    res = rc.get(query_string, [&](auto res) -> int {   
-                                                        std::istringstream istr(res.body);
-                                                        istr >> get_res;
-                                                        return 0; 
-                                                    });
+    //the HTTP GET call for the REST API
+    res = rc.get(query_string, [&](auto res) -> int {
+        std::istringstream istr(res.body);
+        istr >> get_res;
+        return 0;
+    });
 
-    if(res){
+    if(res) {
         std::cerr << "call to REST API failed, exiting..." << std::endl;
         return res;
-    }else{
+    } else {
         std::cout << "call to REST API was successful, dumping response to file..." << std::endl;
     }
 
