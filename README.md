@@ -1,1 +1,1 @@
-# C++ OAuth2 REST client
+# C++ REST client using OAuth2
