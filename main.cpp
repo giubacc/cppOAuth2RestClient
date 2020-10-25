@@ -128,7 +128,8 @@ struct rest_client {
                 std::cout << "warning: call result code was:" << res.code << std::endl;
             }
 
-            return cb(res);
+            cb(res);
+            return res.code;
         }
 
     private:
@@ -270,12 +271,11 @@ int main()
 
     //we create a rest client
     rest_client rc("rc.properties");
-    int res = 0;
 
     //we init it
-    if((res = rc.init())) {
+    if(rc.init()) {
         std::cerr << "error init rest_client, exiting..." << std::endl;
-        return res;
+        return 1;
     }
 
     //the optional query string to apply to the REST API call
@@ -283,25 +283,25 @@ int main()
     query_string += GET_PROPERTY(rc.get_cfg(), "api_key");
 
     //the response in json format from the REST API
-    Json::Value get_res;
+    Json::Value json_response;
 
     //the HTTP GET call for the REST API
-    res = rc.get(query_string, [&](auto res) -> int {
-        std::istringstream istr(res.body);
-        istr >> get_res;
+    int http_res = rc.get(query_string, [&](RestClient::Response &get_res) -> int {
+        std::istringstream istr(get_res.body);
+        istr >> json_response;
         return 0;
     });
 
-    if(res) {
+    if(http_res != 200) {
         std::cerr << "call to REST API failed, exiting..." << std::endl;
-        return res;
+        return 1;
     } else {
         std::cout << "call to REST API was successful, dumping response to file..." << std::endl;
     }
 
     //flush REST API response to file named: GET_response
     std::ofstream GET_response_ofs("GET_response", std::ofstream::trunc);
-    GET_response_ofs << get_res;
+    GET_response_ofs << json_response;
 
     return 0;
 }
