@@ -34,7 +34,7 @@ RUN apt-get update \
     && apt-get autoremove -y \
     && apt-get clean -y \
     && rm -rf /var/lib/apt/lists/* \
-    #
+    # Build and install restclient-cpp library
     && mkdir /3rdpartylibs && cd /3rdpartylibs \
     && git clone https://github.com/mrtazz/restclient-cpp.git && cd restclient-cpp \
     && git checkout 0.5.2 \
